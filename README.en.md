@@ -187,7 +187,7 @@ docker compose -f docker-compose.yml -f deploy/compose.pull.yml up -d --no-build
 
 First GHCR pull: set the package **Public** (package → Package settings → Change visibility). For a private package: `echo $GITHUB_TOKEN | docker login ghcr.io -u USER --password-stdin`.
 
-Remote SSH deploy: Actions → ci → Run workflow → Deploy. Repository secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (directory with compose and `config.yaml` on the host).
+Remote SSH deploy: Actions → ci → Run workflow → Deploy. It pulls this run’s `sha-<short>` tag, not necessarily `:latest`. Repository secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (directory with compose and `config.yaml` on the host).
 
 The checker is off by default (`profiles: [checker]`):
 

@@ -34,6 +34,8 @@ jobs:
   image:
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -46,6 +48,18 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=ref,event=tag
             type=semver,pattern={{version}}
+      - id: ref
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          tag=$(printf '%s\n' "$TAGS" | grep -E ':sha-' | head -n1)
+          if [ -z "$tag" ]; then
+            echo "metadata-action did not emit a sha- tag" >&2
+            exit 1
+          fi
+          echo "image=${tag}" >> "$GITHUB_OUTPUT"
+          echo "deploy image ${tag}"
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:
@@ -74,15 +88,20 @@ jobs:
             echo "Set repository secrets DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH"
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - name: Show image
+        run: echo "deploying ${{ needs.image.outputs.image }}"
       - uses: appleboy/ssh-action@v1.2.2
+        env:
+          ROUTEPROXY_IMAGE: ${{ needs.image.outputs.image }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: ROUTEPROXY_IMAGE
           script_stop: true
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
+            export ROUTEPROXY_IMAGE
             docker compose -f docker-compose.yml -f deploy/compose.pull.yml pull
             docker compose -f docker-compose.yml -f deploy/compose.pull.yml up -d --no-build

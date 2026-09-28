@@ -185,7 +185,7 @@ docker compose -f docker-compose.yml -f deploy/compose.pull.yml up -d --no-build
 
 Первый pull с GHCR: пакет должен быть **Public** (пакет → Package settings → Change visibility). Для приватного: `echo $GITHUB_TOKEN | docker login ghcr.io -u USER --password-stdin`.
 
-Удалённый деплой по SSH: Actions → ci → Run workflow → Deploy. Секреты репозитория: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (каталог с compose и `config.yaml` на хосте).
+Удалённый деплой по SSH: Actions → ci → Run workflow → Deploy. Тянется тег `sha-<short>` этого запуска, не обязательно `:latest`. Секреты: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (каталог с compose и `config.yaml` на хосте).
 
 Чекер по умолчанию не стартует (`profiles: [checker]`):
 
