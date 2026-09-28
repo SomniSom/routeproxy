@@ -1,0 +1,54 @@
+name: routeproxy
+
+services:
+  routeproxy:
+    build: .
+    image: routeproxy:local
+    container_name: routeproxy
+    network_mode: host
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./config.yaml:/etc/routeproxy/config.yaml:ro
+      - type: bind
+        source: /opt/homeproxy/ssh
+        target: /etc/routeproxy/ssh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/wireguard
+        target: /etc/wireguard
+        read_only: true
+        bind:
+          create_host_path: false
+      - routeproxy-data:/var/lib/routeproxy
+    working_dir: /etc/routeproxy
+    environment:
+      ROUTEPROXY_CONFIG: /etc/routeproxy/config.yaml
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - rpctl generate && exec sing-box run -c /var/lib/routeproxy/config.json
+
+  routeproxy-checker:
+    profiles: ["checker"]
+    image: routeproxy:local
+    container_name: routeproxy-checker
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - routeproxy
+    volumes:
+      - ./config.yaml:/etc/routeproxy/config.yaml:ro
+      - routeproxy-data:/var/lib/routeproxy
+    working_dir: /etc/routeproxy
+    environment:
+      ROUTEPROXY_CONFIG: /etc/routeproxy/config.yaml
+    entrypoint: ["/usr/local/bin/rpctl"]
+    command: ["checker"]
+
+volumes:
+  routeproxy-data:

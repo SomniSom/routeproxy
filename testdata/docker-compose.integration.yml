@@ -1,0 +1,24 @@
+# Integration: mock SOCKS upstream + generated mixed inbound (no secrets).
+#   docker compose -f testdata/docker-compose.integration.yml up --build
+name: routeproxy-it
+
+services:
+  mock-socks:
+    image: serjs/go-socks5-proxy:latest
+    environment:
+      PROXY_USER: test
+      PROXY_PASSWORD: test
+    ports:
+      - "127.0.0.1:18095:1080"
+
+  checker-status:
+    build: ..
+    image: routeproxy:local
+    network_mode: host
+    volumes:
+      - ./integration.yaml:/etc/routeproxy/config.yaml:ro
+    working_dir: /tmp
+    environment:
+      ROUTEPROXY_CONFIG: /etc/routeproxy/config.yaml
+    command: ["checker"]
+    entrypoint: ["/usr/local/bin/rpctl"]

@@ -1,0 +1,19 @@
+[Unit]
+Description=routeproxy sing-box split routing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ROUTEPROXY_CONFIG=/etc/routeproxy/config.yaml
+WorkingDirectory=/etc/routeproxy
+ExecStartPre=/usr/local/bin/rpctl generate
+ExecStartPre=/usr/local/bin/sing-box check -c /var/lib/routeproxy/config.json
+ExecStart=/usr/local/bin/sing-box run -c /var/lib/routeproxy/config.json
+Restart=on-failure
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

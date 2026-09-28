@@ -1,0 +1,15 @@
+[Unit]
+Description=routeproxy MTProto checker (Bot API :1443)
+After=network-online.target routeproxy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ROUTEPROXY_CONFIG=/etc/routeproxy/config.yaml
+WorkingDirectory=/etc/routeproxy
+ExecStart=/usr/local/bin/rpctl checker
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

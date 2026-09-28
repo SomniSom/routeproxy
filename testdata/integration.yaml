@@ -1,0 +1,27 @@
+listen: "127.0.0.1:18090"
+generated_path: /tmp/rp-it-config.json
+cache_dir: /tmp/rp-it-cache
+
+checker:
+  listen: "127.0.0.1:18443"
+  status_addr: "127.0.0.1:18081"
+
+proxies:
+  - name: mock-socks
+    purpose: [auto, telegram]
+    type: socks
+    server: 127.0.0.1
+    port: 18095
+    username: test
+    password: test
+
+telegram_mtproto:
+  - name: loop-tcp
+    server: 127.0.0.1
+    port: 18443
+    secret: "aabbccddeeff00112233445566778899"
+
+routing:
+  ru: direct
+  telegram: telegram
+  default: auto

@@ -1,0 +1,14 @@
+/rpctl
+/bin/
+/generated/
+config.yaml
+config.local.yaml
+sfa.json
+*.sfa.json
+*.pem
+id_rsa
+id_ed25519
+*.env
+coverage.out
+.idea/
+.vscode/

@@ -1,0 +1,6 @@
+# Docker overlay — copy fields into config.yaml
+generated_path: /var/lib/routeproxy/config.json
+cache_dir: /var/lib/routeproxy/cache
+bot_api:
+  env_file: /var/lib/routeproxy/telegram-bot-api.env
+  checker_host: 127.0.0.1

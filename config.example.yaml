@@ -1,0 +1,100 @@
+# Copy to /etc/routeproxy/config.yaml or ./config.yaml
+# Clients: SOCKS5h / HTTP  listen  (Telegram Desktop → SOCKS5 127.0.0.1:1080)
+# Bot API: MTProto on checker :1443 (same secret as the group)
+
+listen: "127.0.0.1:1080"
+set_system_proxy: false
+generated_path: generated/config.json   # systemd: /var/lib/routeproxy/config.json
+cache_dir: generated/cache              # systemd: /var/lib/routeproxy/cache
+
+checker:
+  listen: "127.0.0.1:1443"
+  status_addr: "127.0.0.1:18080"
+  health:
+    interval_sec: 8
+    timeout_sec: 4
+    fail_threshold: 2
+    ok_threshold: 1
+    concurrency: 6
+
+proxies:
+  - name: vless-example
+    purpose: [auto, telegram]
+    type: vless
+    server: example.com
+    port: 443
+    uuid: 00000000-0000-0000-0000-000000000000
+    flow: xtls-rprx-vision
+    tls:
+      server_name: example.com
+      reality: true
+      public_key: 0123456789abcdef0123456789abcdef0123456789a
+      short_id: "aabbccdd"
+      utls: chrome
+    # grpc + reality (no flow):
+    # transport:
+    #   type: grpc
+    #   service_name: livestreamcontent
+
+  - name: ssh-example
+    purpose: [auto]
+    type: ssh
+    server: 203.0.113.10
+    port: 22
+    user: root
+    private_key_path: /etc/routeproxy/ssh/id_rsa
+
+  - name: socks-example
+    purpose: [auto, telegram]
+    type: socks
+    url: "tg://socks?server=203.0.113.20&port=1080&user=u&pass=p"
+
+  - name: ru-rotate
+    purpose: [ru]
+    type: socks
+    server: rotator.example.com
+    port: 1080
+    username: user
+    password: secret
+
+telegram_mtproto:
+  - name: tg-mtproto-1
+    server: 203.0.113.30
+    port: 443
+    secret: "ee0000000000000000000000000000000074656c656772616d2e6f7267"
+
+routing:
+  private: direct
+  ru: ru
+  telegram: telegram
+  default: auto
+  exceptions:
+    - match_domain_suffix: nalog.ru
+      outbound: direct
+    - match_domain_suffix: gosuslugi.ru
+      outbound: direct
+
+alerts:
+  telegram:
+    bot_token: ""
+    chat_id: 0
+    via: auto
+  smtp:
+    host: smtp.yandex.ru
+    port: 465
+    username: ""
+    password: ""
+    from: ""
+    to: []
+    via: direct
+  mtproto_dead_for: 30s
+  mtproto_alive_for: 60s
+  warn_when_healthy_left: 1
+
+bot_api:
+  env_file: generated/telegram-bot-api.env
+  checker_host: 127.0.0.1
+  restart_command: []
+
+apply:
+  commands: []
