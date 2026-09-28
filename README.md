@@ -168,9 +168,24 @@ autoload -U compinit && compinit
 - `listen: "0.0.0.0:8079"` (или другой свободный порт)
 - `generated_path` / `cache_dir` как в [`deploy/config.docker.yaml`](deploy/config.docker.yaml)
 
+Локальная сборка:
+
 ```bash
 docker compose up --build -d
 ```
+
+CI на `main` собирает образ и публикует в [GHCR](https://github.com/SomniSom/routeproxy/pkgs/container/routeproxy): `ghcr.io/somnisom/routeproxy:latest` и `sha-<short>`. После этого на хосте без пересборки:
+
+```bash
+make deploy
+# или
+docker compose -f docker-compose.yml -f deploy/compose.pull.yml pull
+docker compose -f docker-compose.yml -f deploy/compose.pull.yml up -d --no-build
+```
+
+Первый pull с GHCR: пакет должен быть **Public** (пакет → Package settings → Change visibility). Для приватного: `echo $GITHUB_TOKEN | docker login ghcr.io -u USER --password-stdin`.
+
+Удалённый деплой по SSH: Actions → ci → Run workflow → Deploy. Секреты репозитория: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (каталог с compose и `config.yaml` на хосте).
 
 Чекер по умолчанию не стартует (`profiles: [checker]`):
 

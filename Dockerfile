@@ -1,7 +1,9 @@
 FROM golang:1.23-bookworm AS build
 WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN go mod tidy && CGO_ENABLED=0 go build -o /out/rpctl ./cmd/rpctl
+RUN CGO_ENABLED=0 go build -o /out/rpctl ./cmd/rpctl
 
 FROM debian:bookworm-slim
 ARG SING_BOX_VERSION=1.12.10

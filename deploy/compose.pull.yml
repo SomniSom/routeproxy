@@ -1,0 +1,12 @@
+# Overlay for a prebuilt GHCR image (no local build).
+#   make deploy
+#   docker compose -f docker-compose.yml -f deploy/compose.pull.yml pull
+#   docker compose -f docker-compose.yml -f deploy/compose.pull.yml up -d --no-build
+
+services:
+  routeproxy:
+    image: ${ROUTEPROXY_IMAGE:-ghcr.io/somnisom/routeproxy:latest}
+    pull_policy: always
+  routeproxy-checker:
+    image: ${ROUTEPROXY_IMAGE:-ghcr.io/somnisom/routeproxy:latest}
+    pull_policy: always

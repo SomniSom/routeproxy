@@ -3,7 +3,7 @@ name: routeproxy
 services:
   routeproxy:
     build: .
-    image: routeproxy:local
+    image: ${ROUTEPROXY_IMAGE:-ghcr.io/somnisom/routeproxy:latest}
     container_name: routeproxy
     network_mode: host
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
 
   routeproxy-checker:
     profiles: ["checker"]
-    image: routeproxy:local
+    image: ${ROUTEPROXY_IMAGE:-ghcr.io/somnisom/routeproxy:latest}
     container_name: routeproxy-checker
     network_mode: host
     restart: unless-stopped

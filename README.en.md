@@ -170,9 +170,24 @@ autoload -U compinit && compinit
 - `listen: "0.0.0.0:8079"` (or another free port)
 - `generated_path` / `cache_dir` as in [`deploy/config.docker.yaml`](deploy/config.docker.yaml)
 
+Local build:
+
 ```bash
 docker compose up --build -d
 ```
+
+CI on `main` builds and publishes to [GHCR](https://github.com/SomniSom/routeproxy/pkgs/container/routeproxy): `ghcr.io/somnisom/routeproxy:latest` and `sha-<short>`. On the host, skip the rebuild:
+
+```bash
+make deploy
+# or
+docker compose -f docker-compose.yml -f deploy/compose.pull.yml pull
+docker compose -f docker-compose.yml -f deploy/compose.pull.yml up -d --no-build
+```
+
+First GHCR pull: set the package **Public** (package → Package settings → Change visibility). For a private package: `echo $GITHUB_TOKEN | docker login ghcr.io -u USER --password-stdin`.
+
+Remote SSH deploy: Actions → ci → Run workflow → Deploy. Repository secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (directory with compose and `config.yaml` on the host).
 
 The checker is off by default (`profiles: [checker]`):
 

@@ -1,4 +1,7 @@
-.PHONY: test build tidy check cover completion
+.PHONY: test build tidy check cover completion image deploy
+
+IMAGE ?= ghcr.io/somnisom/routeproxy:latest
+COMPOSE_PULL := docker compose -f docker-compose.yml -f deploy/compose.pull.yml
 
 build:
 	go build -o rpctl ./cmd/rpctl
@@ -17,6 +20,13 @@ completion:
 	mkdir -p contrib/completions
 	go run ./cmd/rpctl completion bash > contrib/completions/rpctl.bash
 	go run ./cmd/rpctl completion zsh > contrib/completions/_rpctl
+
+image:
+	docker build -t $(IMAGE) .
+
+deploy:
+	$(COMPOSE_PULL) pull
+	$(COMPOSE_PULL) up -d --no-build
 
 check: build
 	./rpctl generate -config config.example.yaml
