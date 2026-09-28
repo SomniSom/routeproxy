@@ -2,8 +2,10 @@ package alert
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,10 +20,13 @@ import (
 	"routeproxy/internal/config"
 )
 
+var telegramAPI = "https://api.telegram.org"
+
 type Sender struct {
-	cfg  *config.Config
-	mu   sync.Mutex
-	last map[string]time.Time
+	cfg          *config.Config
+	mu           sync.Mutex
+	last         map[string]time.Time
+	transportFor func(via string) http.RoundTripper
 }
 
 func New(cfg *config.Config) *Sender {
@@ -50,27 +55,70 @@ func (s *Sender) Notify(key, subject, body string) {
 	}
 }
 
+type httpStatusError struct {
+	status int
+	body   string
+}
+
+func (e httpStatusError) Error() string {
+	return fmt.Sprintf("http %d %s", e.status, e.body)
+}
+
+func isRateLimited(err error) bool {
+	var st httpStatusError
+	return errors.As(err, &st) && st.status == http.StatusTooManyRequests
+}
+
+func altVia(via string) string {
+	if strings.EqualFold(via, "direct") {
+		return "auto"
+	}
+	return "direct"
+}
+
+func (s *Sender) resolveVia(via string) string {
+	if via == "" {
+		via = "auto"
+	}
+	if s.cfg.Alerts.ForbidDirect && strings.EqualFold(via, "direct") {
+		return "auto"
+	}
+	return via
+}
+
+func (s *Sender) allowVia(via string) bool {
+	return !s.cfg.Alerts.ForbidDirect || !strings.EqualFold(via, "direct")
+}
+
 func (s *Sender) sendTelegram(text string) error {
+	via := s.resolveVia(s.cfg.Alerts.Telegram.Via)
+	err := s.sendTelegramVia(text, via)
+	if err == nil || !isRateLimited(err) {
+		return err
+	}
+	next := altVia(via)
+	if !s.allowVia(next) {
+		return err
+	}
+	fmt.Printf("alert telegram 429 via %s, retry via %s\n", via, next)
+	return s.sendTelegramVia(text, next)
+}
+
+func (s *Sender) sendTelegramVia(text, via string) error {
 	tok := s.cfg.Alerts.Telegram.BotToken
 	chat := s.cfg.Alerts.Telegram.ChatID
 	if tok == "" || chat == 0 {
 		return nil
 	}
-	client := &http.Client{Timeout: 20 * time.Second}
-	if strings.EqualFold(s.cfg.Alerts.Telegram.Via, "auto") {
-		d, err := socksDialer(s.cfg.Listen)
-		if err != nil {
-			return err
-		}
-		client.Transport = &http.Transport{
-			DialContext: d.DialContext,
-		}
+	client, err := s.clientFor(via)
+	if err != nil {
+		return err
 	}
 	payload, _ := json.Marshal(map[string]any{
 		"chat_id": chat,
 		"text":    text,
 	})
-	u := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tok)
+	u := fmt.Sprintf("%s/bot%s/sendMessage", telegramAPI, tok)
 	resp, err := client.Post(u, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return err
@@ -78,9 +126,24 @@ func (s *Sender) sendTelegram(text string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("http %d %s", resp.StatusCode, b)
+		return httpStatusError{status: resp.StatusCode, body: string(b)}
 	}
 	return nil
+}
+
+func (s *Sender) clientFor(via string) (*http.Client, error) {
+	if s.transportFor != nil {
+		return &http.Client{Timeout: 20 * time.Second, Transport: s.transportFor(via)}, nil
+	}
+	client := &http.Client{Timeout: 20 * time.Second}
+	if strings.EqualFold(via, "auto") {
+		d, err := socksDialer(s.cfg.Listen)
+		if err != nil {
+			return nil, err
+		}
+		client.Transport = &http.Transport{DialContext: d.DialContext}
+	}
+	return client, nil
 }
 
 func (s *Sender) sendSMTP(subject, body string) error {
@@ -100,23 +163,43 @@ func (s *Sender) sendSMTP(subject, body string) error {
 		from, strings.Join(a.To, ", "), subject, body))
 	addr := net.JoinHostPort(a.Host, fmt.Sprint(port))
 	auth := smtp.PlainAuth("", a.Username, a.Password, a.Host)
-	if port == 465 {
-		return sendSMTPTLS(addr, a.Host, auth, from, a.To, msg)
-	}
-	return smtp.SendMail(addr, auth, from, a.To, msg)
-}
-
-func sendSMTPTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 20 * time.Second}, "tcp", addr, &tls.Config{ServerName: host})
+	via := s.resolveVia(a.Via)
+	conn, err := s.netDial(via, "tcp", addr)
 	if err != nil {
 		return err
 	}
+	if port == 465 {
+		conn = tls.Client(conn, &tls.Config{ServerName: a.Host})
+	}
+	return smtpOver(conn, a.Host, auth, from, a.To, msg, port != 465)
+}
+
+func (s *Sender) netDial(via, network, addr string) (net.Conn, error) {
+	via = s.resolveVia(via)
+	if strings.EqualFold(via, "auto") {
+		d, err := socksDialer(s.cfg.Listen)
+		if err != nil {
+			return nil, err
+		}
+		return d.DialContext(context.Background(), network, addr)
+	}
+	return net.DialTimeout(network, addr, 20*time.Second)
+}
+
+func smtpOver(conn net.Conn, host string, auth smtp.Auth, from string, to []string, msg []byte, startTLS bool) error {
 	defer conn.Close()
 	c, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+	if startTLS {
+		if ok, _ := c.Extension("STARTTLS"); ok {
+			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+				return err
+			}
+		}
+	}
 	if err := c.Auth(auth); err != nil {
 		return err
 	}

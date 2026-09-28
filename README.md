@@ -92,6 +92,7 @@ routing:
 | `routing.exceptions` | точечный override |
 | `dns.direct_names` | резолв имён узлов через bootstrap, не через auto |
 | `alerts` | Telegram + SMTP одновременно |
+| `alerts.forbid_direct` | запрет ISP/`direct` для алертов (включая ретрай 429) |
 | `bot_api` | env для TDLib при падении MTProto |
 | `apply.commands` | что выполнить в `rpctl apply` |
 
@@ -251,7 +252,7 @@ Secret = `telegram_mtproto`. Чекер форвардит TCP на первый
 
 ## Алерты
 
-Telegram (`api.telegram.org` через SOCKS `listen`, `via: auto`) **и** SMTP из конфига — оба канала на одно событие: остался 1 живой MTProto, ноль, fallback/restore. Не через local Bot API.
+Telegram (`api.telegram.org` через SOCKS `listen`, `via: auto`) **и** SMTP из конфига — оба канала на одно событие: остался 1 живой MTProto, ноль, fallback/restore. Не через local Bot API. HTTP 429 от Telegram повторяется через другой `via` (`auto` ↔ `direct`). `alerts.forbid_direct: true` полностью запрещает `direct`: алерты только через SOCKS, 429 на `direct` не уходит.
 
 ## Тесты
 

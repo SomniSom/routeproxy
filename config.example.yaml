@@ -75,6 +75,7 @@ routing:
       outbound: direct
 
 alerts:
+  forbid_direct: false  # true: never send alerts via ISP; 429 does not fall back to direct
   telegram:
     bot_token: ""
     chat_id: 0

@@ -32,6 +32,9 @@ func TestLoadExample(t *testing.T) {
 	if cfg.TelegramMTProto[0].Secret[:2] != "ee" {
 		t.Fatal(cfg.TelegramMTProto[0])
 	}
+	if cfg.Alerts.ForbidDirect {
+		t.Fatal("example should leave forbid_direct off")
+	}
 }
 
 func TestValidateDuplicateName(t *testing.T) {

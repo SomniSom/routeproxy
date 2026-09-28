@@ -123,6 +123,7 @@ func (e Exception) Target() string {
 type Alerts struct {
 	Telegram            TelegramAlert `yaml:"telegram"`
 	SMTP                SMTPAlert     `yaml:"smtp"`
+	ForbidDirect        bool          `yaml:"forbid_direct"`
 	MTProtoDeadFor      string        `yaml:"mtproto_dead_for"`
 	MTProtoAliveFor     string        `yaml:"mtproto_alive_for"`
 	WarnWhenHealthyLeft int           `yaml:"warn_when_healthy_left"`

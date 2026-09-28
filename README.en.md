@@ -94,6 +94,7 @@ Copy [`config.example.yaml`](config.example.yaml) → `config.yaml` (gitignored)
 | `routing.exceptions` | per-site override |
 | `dns.direct_names` | resolve node hostnames via bootstrap, not auto |
 | `alerts` | Telegram and SMTP together |
+| `alerts.forbid_direct` | never send alerts via ISP/`direct` (including 429 retry) |
 | `bot_api` | TDLib env when MTProto dies |
 | `apply.commands` | commands run by `rpctl apply` |
 
@@ -253,7 +254,7 @@ The secret must match `telegram_mtproto`. The checker TCP-forwards to the first 
 
 ## Alerts
 
-Cloud Telegram (`api.telegram.org` via SOCKS `listen`, `via: auto`) **and** SMTP from the config fire on the same event: one healthy MTProto left, zero, fallback/restore. Not via the local Bot API.
+Cloud Telegram (`api.telegram.org` via SOCKS `listen`, `via: auto`) **and** SMTP from the config fire on the same event: one healthy MTProto left, zero, fallback/restore. Not via the local Bot API. HTTP 429 from Telegram is retried on the other `via` (`auto` ↔ `direct`). `alerts.forbid_direct: true` never uses `direct`: alerts go through SOCKS only, and 429 does not fall back to the ISP.
 
 ## Tests
 
