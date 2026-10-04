@@ -5,8 +5,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"routeproxy/internal/config"
 )
@@ -193,11 +195,83 @@ func TestSendTelegramNoRetryOnOtherHTTP(t *testing.T) {
 		})
 	}
 	err := s.sendTelegram("hi")
-	var st httpStatusError
-	if !errors.As(err, &st) || st.status != 400 {
+	if st, ok := errors.AsType[httpStatusError](err); !ok || st.status != 400 {
 		t.Fatalf("want 400, got %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("retries on non-429: n=%d", n)
 	}
+}
+
+func withShortIOTimeout(t *testing.T) {
+	t.Helper()
+	old := alertIOTimeout
+	alertIOTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { alertIOTimeout = old })
+}
+
+func TestNetDialSOCKSTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	withShortIOTimeout(t)
+	s := New(&config.Config{Listen: ln.Addr().String()})
+	start := time.Now()
+	_, err = s.netDial("auto", "tcp", "example.com:25")
+	if err == nil {
+		t.Fatal("expected SOCKS dial timeout")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("SOCKS dial hung %s", d)
+	}
+}
+
+func TestSMTP465HandshakeTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		time.Sleep(2 * time.Second)
+	}()
+	host, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withShortIOTimeout(t)
+	s := New(&config.Config{
+		Alerts: config.Alerts{
+			SMTP: config.SMTPAlert{
+				Host:     host,
+				Port:     port,
+				Username: "u",
+				Password: "p",
+				To:       []string{"a@b.c"},
+				Via:      "direct",
+			},
+		},
+	})
+	start := time.Now()
+	if err := s.sendSMTP("s", "b"); err == nil {
+		t.Fatal("expected TLS handshake timeout")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("TLS handshake hung %s", d)
+	}
+	ln.Close()
+	<-done
 }

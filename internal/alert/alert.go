@@ -2,6 +2,7 @@ package alert
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -20,7 +21,10 @@ import (
 	"routeproxy/internal/config"
 )
 
-var telegramAPI = "https://api.telegram.org"
+var (
+	telegramAPI    = "https://api.telegram.org"
+	alertIOTimeout = 20 * time.Second
+)
 
 type Sender struct {
 	cfg          *config.Config
@@ -65,8 +69,8 @@ func (e httpStatusError) Error() string {
 }
 
 func isRateLimited(err error) bool {
-	var st httpStatusError
-	return errors.As(err, &st) && st.status == http.StatusTooManyRequests
+	st, ok := errors.AsType[httpStatusError](err)
+	return ok && st.status == http.StatusTooManyRequests
 }
 
 func altVia(via string) string {
@@ -133,9 +137,9 @@ func (s *Sender) sendTelegramVia(text, via string) error {
 
 func (s *Sender) clientFor(via string) (*http.Client, error) {
 	if s.transportFor != nil {
-		return &http.Client{Timeout: 20 * time.Second, Transport: s.transportFor(via)}, nil
+		return &http.Client{Timeout: alertIOTimeout, Transport: s.transportFor(via)}, nil
 	}
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := &http.Client{Timeout: alertIOTimeout}
 	if strings.EqualFold(via, "auto") {
 		d, err := socksDialer(s.cfg.Listen)
 		if err != nil {
@@ -151,14 +155,8 @@ func (s *Sender) sendSMTP(subject, body string) error {
 	if a.Host == "" || len(a.To) == 0 || a.Username == "" {
 		return nil
 	}
-	from := a.From
-	if from == "" {
-		from = a.Username
-	}
-	port := a.Port
-	if port == 0 {
-		port = 465
-	}
+	from := cmp.Or(a.From, a.Username)
+	port := cmp.Or(a.Port, 465)
 	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n",
 		from, strings.Join(a.To, ", "), subject, body))
 	addr := net.JoinHostPort(a.Host, fmt.Sprint(port))
@@ -168,8 +166,17 @@ func (s *Sender) sendSMTP(subject, body string) error {
 	if err != nil {
 		return err
 	}
+	if err := conn.SetDeadline(time.Now().Add(alertIOTimeout)); err != nil {
+		conn.Close()
+		return err
+	}
 	if port == 465 {
-		conn = tls.Client(conn, &tls.Config{ServerName: a.Host})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: a.Host})
+		if err := tlsConn.Handshake(); err != nil {
+			tlsConn.Close()
+			return err
+		}
+		conn = tlsConn
 	}
 	return smtpOver(conn, a.Host, auth, from, a.To, msg, port != 465)
 }
@@ -181,9 +188,11 @@ func (s *Sender) netDial(via, network, addr string) (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return d.DialContext(context.Background(), network, addr)
+		ctx, cancel := context.WithTimeout(context.Background(), alertIOTimeout)
+		defer cancel()
+		return d.DialContext(ctx, network, addr)
 	}
-	return net.DialTimeout(network, addr, 20*time.Second)
+	return net.DialTimeout(network, addr, alertIOTimeout)
 }
 
 func smtpOver(conn net.Conn, host string, auth smtp.Auth, from string, to []string, msg []byte, startTLS bool) error {

@@ -100,7 +100,7 @@ routing:
 
 ## Сборка
 
-Нужны Go 1.23+ и [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ в `PATH` (для `check` / `apply`).
+Нужны Go 1.27+ и [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ в `PATH` (для `check` / `apply`).
 
 ```bash
 go test ./...

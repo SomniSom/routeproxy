@@ -24,8 +24,7 @@ func TestWarnWhenTunMissing(t *testing.T) {
 	if err := os.WriteFile(statusFile, []byte("CapEff:\t0000000000000000\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	en := true
-	cfg := &config.Config{Proxies: []config.Proxy{{Name: "wg", Type: "wireguard", Enabled: &en}}}
+	cfg := &config.Config{Proxies: []config.Proxy{{Name: "wg", Type: "wireguard", Enabled: new(true)}}}
 	w := WireGuardWarnings(cfg)
 	if len(w) < 2 {
 		t.Fatalf("want tun+cap warnings, got %v", w)

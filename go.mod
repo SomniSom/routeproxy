@@ -1,6 +1,6 @@
 module routeproxy
 
-go 1.23.0
+go 1.27.0
 
 require (
 	golang.org/x/net v0.36.0

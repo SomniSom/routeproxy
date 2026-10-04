@@ -47,7 +47,7 @@ func ParseWGQuick(path string) (*WGQuick, error) {
 			case "PrivateKey":
 				out.PrivateKey = v
 			case "Address":
-				for _, a := range strings.Split(v, ",") {
+				for a := range strings.SplitSeq(v, ",") {
 					a = strings.TrimSpace(a)
 					if a != "" {
 						out.Address = append(out.Address, a)

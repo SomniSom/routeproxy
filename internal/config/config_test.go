@@ -81,10 +81,9 @@ func TestExceptionForceWins(t *testing.T) {
 }
 
 func TestHasWireGuardAndHostPort(t *testing.T) {
-	en := true
 	cfg := &config.Config{
 		Listen:  "0.0.0.0:8079",
-		Proxies: []config.Proxy{{Name: "wg", Type: "wireguard", Enabled: &en}},
+		Proxies: []config.Proxy{{Name: "wg", Type: "wireguard", Enabled: new(true)}},
 	}
 	if !cfg.HasWireGuard() {
 		t.Fatal("expected wg")
@@ -96,8 +95,7 @@ func TestHasWireGuardAndHostPort(t *testing.T) {
 }
 
 func TestDisabledProxy(t *testing.T) {
-	f := false
-	p := config.Proxy{Enabled: &f}
+	p := config.Proxy{Enabled: new(false)}
 	if p.IsEnabled() {
 		t.Fatal("disabled")
 	}

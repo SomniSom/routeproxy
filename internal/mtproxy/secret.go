@@ -44,7 +44,7 @@ func decodeHexASCII(hex string) (string, error) {
 		return "", errOddHex
 	}
 	out := make([]byte, len(hex)/2)
-	for i := 0; i < len(out); i++ {
+	for i := range len(out) {
 		a := unhex(hex[i*2])
 		b := unhex(hex[i*2+1])
 		if a < 0 || b < 0 {

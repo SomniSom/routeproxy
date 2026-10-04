@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -264,7 +265,7 @@ func cmdAdd(args []string) error {
 
 func splitCSV(s string) []string {
 	var out []string
-	for _, p := range strings.Split(s, ",") {
+	for p := range strings.SplitSeq(s, ",") {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			out = append(out, p)
@@ -317,8 +318,8 @@ func cmdProbe(args []string) error {
 		return err
 	}
 	status := cfg.Checker.StatusAddr
-	if h, _, err := net.SplitHostPort(status); err == nil && (h == "0.0.0.0" || h == "::") {
-		status = net.JoinHostPort("127.0.0.1", strings.Split(cfg.Checker.StatusAddr, ":")[1])
+	if h, port, err := net.SplitHostPort(status); err == nil && (h == "0.0.0.0" || h == "::") {
+		status = net.JoinHostPort("127.0.0.1", port)
 	}
 	u := "http://" + status + "/healthz"
 	resp, err := http.Get(u)
@@ -369,14 +370,13 @@ func cmdChecker(args []string) error {
 	}
 	go func() {
 		log.Printf("status %s", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
 	}()
 
 	timeout := time.Duration(cfg.Checker.Health.TimeoutSec * float64(time.Second))
 	for _, g := range reg.Groups {
-		g := g
 		go func() {
 			if err := mtproxy.ServeGroup(ctx, g, reg, timeout); err != nil {
 				log.Printf("serve :%d: %v", g.ListenPort, err)
