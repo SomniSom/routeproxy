@@ -102,7 +102,7 @@ Copy [`config.example.yaml`](config.example.yaml) → `config.yaml` (gitignored)
 
 ## Build
 
-Go 1.23+ and [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ on `PATH` (for `check` / `apply`).
+Go 1.27+ and [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ on `PATH` (for `check` / `apply`).
 
 ```bash
 go test ./...

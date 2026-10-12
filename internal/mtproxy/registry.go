@@ -32,7 +32,7 @@ type Proxy struct {
 	LastCheck   time.Time
 	Fails       int
 	OKs         int
-	ActiveConns int32
+	ActiveConns atomic.Int32
 }
 
 type Group struct {
@@ -217,7 +217,7 @@ func (r *Registry) Snapshot() map[string]any {
 				"name":         cur.Name,
 				"server":       cur.Server,
 				"port":         cur.Port,
-				"active_conns": atomic.LoadInt32(&cur.ActiveConns),
+				"active_conns": cur.ActiveConns.Load(),
 			}
 		}
 		reserve := false
@@ -262,7 +262,7 @@ func proxyView(p *Proxy) map[string]any {
 			"ok":              p.OK,
 			"last_error":      p.LastError,
 			"last_check_unix": p.LastCheck.Unix(),
-			"active_conns":    atomic.LoadInt32(&p.ActiveConns),
+			"active_conns":    p.ActiveConns.Load(),
 			"fails":           p.Fails,
 			"oks":             p.OKs,
 		}
@@ -279,7 +279,7 @@ func proxyView(p *Proxy) map[string]any {
 		"ok":              p.OK,
 		"last_error":      p.LastError,
 		"last_check_unix": p.LastCheck.Unix(),
-		"active_conns":    atomic.LoadInt32(&p.ActiveConns),
+		"active_conns":    p.ActiveConns.Load(),
 		"fails":           p.Fails,
 		"oks":             p.OKs,
 	}
@@ -359,13 +359,11 @@ func (r *Registry) CheckAll(cfg *config.Config) {
 	sem := make(chan struct{}, max(1, h.Concurrency))
 	var wg sync.WaitGroup
 	for _, p := range r.Proxies {
-		wg.Add(1)
 		sem <- struct{}{}
-		go func(p *Proxy) {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			r.CheckOne(p, timeout, h.FailThreshold, h.OKThreshold)
-		}(p)
+		})
 	}
 	wg.Wait()
 	r.Recompute()
@@ -376,25 +374,37 @@ type StatusServer struct {
 }
 
 func (s StatusServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	s.handler().ServeHTTP(w, req)
+}
+
+func (s StatusServer) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", s.writeHealth)
+	mux.HandleFunc("GET /health", s.writeHealth)
+	mux.HandleFunc("GET /metrics", s.writeMetrics)
+	mux.HandleFunc("GET /", s.writeSnapshot)
+	return mux
+}
+
+func (s StatusServer) writeHealth(w http.ResponseWriter, _ *http.Request) {
 	snap := s.Reg.Snapshot()
-	path := req.URL.Path
-	if path == "/healthz" || path == "/health" {
-		anyUp, _ := snap["any_up"].(bool)
-		if !anyUp {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": anyUp})
-		return
+	anyUp, _ := snap["any_up"].(bool)
+	if !anyUp {
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	if path == "/metrics" {
-		writeMetrics(w, s.Reg)
-		return
-	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": anyUp})
+}
+
+func (s StatusServer) writeMetrics(w http.ResponseWriter, _ *http.Request) {
+	writeMetrics(w, s.Reg)
+}
+
+func (s StatusServer) writeSnapshot(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(snap)
+	_ = enc.Encode(s.Reg.Snapshot())
 }
 
 func writeMetrics(w http.ResponseWriter, r *Registry) {
@@ -416,7 +426,7 @@ func writeMetrics(w http.ResponseWriter, r *Registry) {
 		p.mu.Unlock()
 		fmt.Fprintf(w, "routeproxy_proxy_up{name=%q} %d\n", p.Name, ok)
 		fmt.Fprintf(w, "routeproxy_proxy_fails{name=%q} %d\n", p.Name, fails)
-		fmt.Fprintf(w, "routeproxy_proxy_active_conns{name=%q} %d\n", p.Name, atomic.LoadInt32(&p.ActiveConns))
+		fmt.Fprintf(w, "routeproxy_proxy_active_conns{name=%q} %d\n", p.Name, p.ActiveConns.Load())
 	}
 }
 
@@ -425,10 +435,8 @@ func ServeGroup(ctx context.Context, g *Group, r *Registry, timeout time.Duratio
 	if err != nil {
 		return err
 	}
-	go func() {
-		<-ctx.Done()
-		_ = ln.Close()
-	}()
+	stop := context.AfterFunc(ctx, func() { _ = ln.Close() })
+	defer stop()
 	log.Printf("listen %s:%d kind=%s proxies=%d", g.ListenHost, g.ListenPort, g.Kind, len(g.Proxies))
 	for {
 		c, err := ln.Accept()
@@ -459,8 +467,8 @@ func handleClient(c net.Conn, g *Group, r *Registry, timeout time.Duration) {
 		return
 	}
 	defer bc.Close()
-	atomic.AddInt32(&backend.ActiveConns, 1)
-	defer atomic.AddInt32(&backend.ActiveConns, -1)
+	backend.ActiveConns.Add(1)
+	defer backend.ActiveConns.Add(-1)
 	errc := make(chan struct{}, 2)
 	go func() { _, _ = io.Copy(bc, c); errc <- struct{}{} }()
 	go func() { _, _ = io.Copy(c, bc); errc <- struct{}{} }()

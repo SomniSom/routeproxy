@@ -1,6 +1,7 @@
 package hostcheck
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -23,7 +24,7 @@ func WireGuardWarnings(cfg *config.Config) []string {
 	}
 	var out []string
 	if _, err := os.Stat(tunDevice); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			out = append(out, "/dev/net/tun отсутствует. На хосте: sudo modprobe tun. В Docker сервису routeproxy: devices: [/dev/net/tun:/dev/net/tun]. Чекеру (rpctl checker / routeproxy-checker) это не нужно; --privileged не требуется.")
 		} else {
 			out = append(out, fmt.Sprintf("/dev/net/tun недоступен: %v. В Docker: devices: [/dev/net/tun:/dev/net/tun]. Чекеру это не нужно; --privileged не требуется.", err))
@@ -44,7 +45,7 @@ func hasCapNetAdmin() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		k, v, ok := strings.Cut(line, ":")
 		if !ok || k != "CapEff" {
 			continue

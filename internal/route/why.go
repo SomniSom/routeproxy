@@ -3,6 +3,7 @@ package route
 import (
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"routeproxy/internal/config"
@@ -96,48 +97,38 @@ func hasSuffix(host, suffix string) bool {
 	return host == strings.TrimPrefix(s, ".") || strings.HasSuffix(host, s)
 }
 
+func hostOrSuffix(host, s string) bool {
+	return host == s || strings.HasSuffix(host, "."+s)
+}
+
 func isRUSuffix(host string) bool {
-	for _, s := range []string{".ru", ".xn--p1ai", ".su"} {
-		if hasSuffix(host, s) {
-			return true
-		}
-	}
-	// Unicode .рф already converted via idna on host; also match raw
-	if strings.HasSuffix(host, ".рф") || host == "рф" {
+	if slices.ContainsFunc([]string{".ru", ".xn--p1ai", ".su"}, func(s string) bool {
+		return hasSuffix(host, s)
+	}) {
 		return true
 	}
-	return false
+	// Unicode .рф already converted via idna on host; also match raw
+	return strings.HasSuffix(host, ".рф") || host == "рф"
 }
 
 func forceAuto(host string) bool {
-	for _, s := range []string{
+	return slices.ContainsFunc([]string{
 		"google.com", "youtube.com", "youtu.be", "gstatic.com", "googleapis.com",
 		"instagram.com", "cdninstagram.com", "twitter.com", "x.com", "t.co",
 		"facebook.com", "fbcdn.net", "discord.com", "discord.gg",
-	} {
-		if host == s || strings.HasSuffix(host, "."+s) {
-			return true
-		}
-	}
-	return false
+	}, func(s string) bool { return hostOrSuffix(host, s) })
 }
 
 func isTelegram(host string) bool {
-	for _, s := range []string{"telegram.org", "t.me", "tdesktop.com", "telegra.ph", "telesco.pe"} {
-		if host == s || strings.HasSuffix(host, "."+s) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc([]string{
+		"telegram.org", "t.me", "tdesktop.com", "telegra.ph", "telesco.pe",
+	}, func(s string) bool { return hostOrSuffix(host, s) })
 }
 
 func isRUGeosite(host string) bool {
-	for _, s := range []string{"vk.com", "vk.ru", "yandex.com", "yandex.net", "mail.ru", "ok.ru", "wildberries.ru"} {
-		if host == s || strings.HasSuffix(host, "."+s) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc([]string{
+		"vk.com", "vk.ru", "yandex.com", "yandex.net", "mail.ru", "ok.ru", "wildberries.ru",
+	}, func(s string) bool { return hostOrSuffix(host, s) })
 }
 
 func ipInCIDR(host, cidr string) bool {

@@ -1,10 +1,12 @@
 package generate
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"routeproxy/internal/config"
@@ -539,16 +541,12 @@ func wireguardEndpoint(p config.Proxy) (map[string]any, error) {
 }
 
 func splitEndpoint(ep string) (string, int) {
-	parts := strings.Split(ep, ":")
-	if len(parts) != 2 {
+	host, portStr, ok := strings.Cut(ep, ":")
+	if !ok {
 		return ep, 51820
 	}
-	var port int
-	fmt.Sscanf(parts[1], "%d", &port)
-	if port == 0 {
-		port = 51820
-	}
-	return parts[0], port
+	port, _ := strconv.Atoi(portStr)
+	return host, cmp.Or(port, 51820)
 }
 
 func routeRules(cfg *config.Config, ruTag, tgTag, autoTag string) []any {

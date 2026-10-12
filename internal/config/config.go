@@ -1,9 +1,11 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -187,67 +189,27 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
-	if c.Listen == "" {
-		c.Listen = "127.0.0.1:1080"
-	}
-	if c.GeneratedPath == "" {
-		c.GeneratedPath = "generated/config.json"
-	}
-	if c.CacheDir == "" {
-		c.CacheDir = "generated/cache"
-	}
-	if c.Checker.Listen == "" {
-		c.Checker.Listen = "127.0.0.1:1443"
-	}
-	if c.Checker.StatusAddr == "" {
-		c.Checker.StatusAddr = "127.0.0.1:18080"
-	}
+	c.Listen = cmp.Or(c.Listen, "127.0.0.1:1080")
+	c.GeneratedPath = cmp.Or(c.GeneratedPath, "generated/config.json")
+	c.CacheDir = cmp.Or(c.CacheDir, "generated/cache")
+	c.Checker.Listen = cmp.Or(c.Checker.Listen, "127.0.0.1:1443")
+	c.Checker.StatusAddr = cmp.Or(c.Checker.StatusAddr, "127.0.0.1:18080")
 	h := &c.Checker.Health
-	if h.IntervalSec == 0 {
-		h.IntervalSec = 8
-	}
-	if h.TimeoutSec == 0 {
-		h.TimeoutSec = 4
-	}
-	if h.FailThreshold == 0 {
-		h.FailThreshold = 2
-	}
-	if h.OKThreshold == 0 {
-		h.OKThreshold = 1
-	}
-	if h.Concurrency == 0 {
-		h.Concurrency = 6
-	}
-	if c.Routing.Private == "" {
-		c.Routing.Private = "direct"
-	}
-	if c.Routing.RU == "" {
-		c.Routing.RU = "ru"
-	}
-	if c.Routing.Telegram == "" {
-		c.Routing.Telegram = "telegram"
-	}
-	if c.Routing.Default == "" {
-		c.Routing.Default = "auto"
-	}
-	if c.Alerts.MTProtoDeadFor == "" {
-		c.Alerts.MTProtoDeadFor = "30s"
-	}
-	if c.Alerts.MTProtoAliveFor == "" {
-		c.Alerts.MTProtoAliveFor = "60s"
-	}
-	if c.Alerts.WarnWhenHealthyLeft == 0 {
-		c.Alerts.WarnWhenHealthyLeft = 1
-	}
-	if c.Alerts.Telegram.Via == "" {
-		c.Alerts.Telegram.Via = "auto"
-	}
-	if c.Alerts.SMTP.Via == "" {
-		c.Alerts.SMTP.Via = "direct"
-	}
-	if c.BotAPI.EnvFile == "" {
-		c.BotAPI.EnvFile = "generated/telegram-bot-api.env"
-	}
+	h.IntervalSec = cmp.Or(h.IntervalSec, 8)
+	h.TimeoutSec = cmp.Or(h.TimeoutSec, 4)
+	h.FailThreshold = cmp.Or(h.FailThreshold, 2)
+	h.OKThreshold = cmp.Or(h.OKThreshold, 1)
+	h.Concurrency = cmp.Or(h.Concurrency, 6)
+	c.Routing.Private = cmp.Or(c.Routing.Private, "direct")
+	c.Routing.RU = cmp.Or(c.Routing.RU, "ru")
+	c.Routing.Telegram = cmp.Or(c.Routing.Telegram, "telegram")
+	c.Routing.Default = cmp.Or(c.Routing.Default, "auto")
+	c.Alerts.MTProtoDeadFor = cmp.Or(c.Alerts.MTProtoDeadFor, "30s")
+	c.Alerts.MTProtoAliveFor = cmp.Or(c.Alerts.MTProtoAliveFor, "60s")
+	c.Alerts.WarnWhenHealthyLeft = cmp.Or(c.Alerts.WarnWhenHealthyLeft, 1)
+	c.Alerts.Telegram.Via = cmp.Or(c.Alerts.Telegram.Via, "auto")
+	c.Alerts.SMTP.Via = cmp.Or(c.Alerts.SMTP.Via, "direct")
+	c.BotAPI.EnvFile = cmp.Or(c.BotAPI.EnvFile, "generated/telegram-bot-api.env")
 	if c.BotAPI.CheckerHost == "" {
 		host, _, err := net.SplitHostPort(c.Checker.Listen)
 		if err != nil || host == "" || host == "0.0.0.0" || host == "::" {
@@ -268,27 +230,13 @@ func (c *Config) normalize() error {
 			if parsed.Kind != importurl.KindSOCKS && parsed.Kind != importurl.KindVLESS && parsed.Kind != importurl.KindTrojan {
 				return fmt.Errorf("proxy %q url is %s, put MTProto under telegram_mtproto", p.Name, parsed.Kind)
 			}
-			if p.Type == "" {
-				p.Type = parsed.Type
-			}
-			if p.Server == "" {
-				p.Server = parsed.Server
-			}
-			if p.Port == 0 {
-				p.Port = parsed.Port
-			}
-			if p.Username == "" {
-				p.Username = parsed.Username
-			}
-			if p.Password == "" {
-				p.Password = parsed.Password
-			}
-			if p.UUID == "" {
-				p.UUID = parsed.UUID
-			}
-			if p.Flow == "" {
-				p.Flow = parsed.Flow
-			}
+			p.Type = cmp.Or(p.Type, parsed.Type)
+			p.Server = cmp.Or(p.Server, parsed.Server)
+			p.Port = cmp.Or(p.Port, parsed.Port)
+			p.Username = cmp.Or(p.Username, parsed.Username)
+			p.Password = cmp.Or(p.Password, parsed.Password)
+			p.UUID = cmp.Or(p.UUID, parsed.UUID)
+			p.Flow = cmp.Or(p.Flow, parsed.Flow)
 			if parsed.TLS != nil && p.TLS == nil {
 				p.TLS = &TLS{
 					ServerName: parsed.TLS.ServerName,
@@ -298,10 +246,7 @@ func (c *Config) normalize() error {
 				}
 			}
 		}
-		if p.Type == "" {
-			p.Type = "socks"
-		}
-		p.Type = strings.ToLower(p.Type)
+		p.Type = strings.ToLower(cmp.Or(p.Type, "socks"))
 		if len(p.Purpose) == 0 {
 			p.Purpose = []string{"auto"}
 		}
@@ -319,15 +264,9 @@ func (c *Config) normalize() error {
 			if parsed.Kind != importurl.KindMTProto {
 				return fmt.Errorf("telegram_mtproto %q is not an mtproto url", m.Name)
 			}
-			if m.Server == "" {
-				m.Server = parsed.Server
-			}
-			if m.Port == 0 {
-				m.Port = parsed.Port
-			}
-			if m.Secret == "" {
-				m.Secret = parsed.Secret
-			}
+			m.Server = cmp.Or(m.Server, parsed.Server)
+			m.Port = cmp.Or(m.Port, parsed.Port)
+			m.Secret = cmp.Or(m.Secret, parsed.Secret)
 		}
 		if m.Name == "" {
 			m.Name = fmt.Sprintf("mtproto-%s-%d", m.Server, m.Port)
@@ -387,21 +326,15 @@ func (c *Config) StatusHostPort() (string, int, error) {
 }
 
 func (c *Config) HasPurpose(purpose string) bool {
-	for _, p := range c.Proxies {
-		if p.HasPurpose(purpose) && p.IsEnabled() {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(c.Proxies, func(p Proxy) bool {
+		return p.HasPurpose(purpose) && p.IsEnabled()
+	})
 }
 
 func (c *Config) HasWireGuard() bool {
-	for _, p := range c.Proxies {
-		if p.IsEnabled() && strings.EqualFold(p.Type, "wireguard") {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(c.Proxies, func(p Proxy) bool {
+		return p.IsEnabled() && strings.EqualFold(p.Type, "wireguard")
+	})
 }
 
 func (c *Config) DeadFor() time.Duration {
@@ -425,12 +358,9 @@ func (p Proxy) IsEnabled() bool {
 }
 
 func (p Proxy) HasPurpose(purpose string) bool {
-	for _, x := range p.Purpose {
-		if strings.EqualFold(x, purpose) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(p.Purpose, func(x string) bool {
+		return strings.EqualFold(x, purpose)
+	})
 }
 
 func (m MTProto) IsEnabled() bool {
