@@ -2,6 +2,7 @@ package mtproxy
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -35,18 +36,32 @@ func probeTCP(host string, port int, timeout time.Duration) (bool, string) {
 	if err != nil {
 		return false, "tcp:" + err.Error()
 	}
-	_ = c.Close()
+	if err := c.Close(); err != nil {
+		return false, "close:" + err.Error()
+	}
 	return true, "tcp"
 }
 
-func probeFakeTLS(host string, port int, timeout time.Duration, sni string) (bool, string) {
+func closeResult(c io.Closer, ok bool, detail string) (bool, string) {
+	if err := c.Close(); err != nil {
+		if !ok {
+			return false, detail + "; close:" + err.Error()
+		}
+		return false, "close:" + err.Error()
+	}
+	return ok, detail
+}
+
+func probeFakeTLS(host string, port int, timeout time.Duration, sni string) (ok bool, detail string) {
 	d := net.Dialer{Timeout: timeout}
 	raw, err := d.Dial("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
 		return false, "tcp:" + err.Error()
 	}
-	defer raw.Close()
-	_ = raw.SetDeadline(time.Now().Add(timeout))
+	defer func() { ok, detail = closeResult(raw, ok, detail) }()
+	if err := raw.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return false, "deadline:" + err.Error()
+	}
 	if sni == "" {
 		sni = "telegram.org"
 	}
@@ -58,27 +73,30 @@ func probeFakeTLS(host string, port int, timeout time.Duration, sni string) (boo
 	conn := tls.Client(raw, cfg)
 	err = conn.Handshake()
 	if err == nil {
-		_ = conn.Close()
+		if err := conn.Close(); err != nil {
+			return false, "close:" + err.Error()
+		}
 		return true, "tls-complete"
 	}
-	if _, ok := err.(tls.RecordHeaderError); ok {
+	if _, ok := errors.AsType[tls.RecordHeaderError](err); ok {
 		return true, "tls-alert:" + err.Error()
 	}
-	// MTProxy fake-TLS often returns an alert / unexpected record — still "alive"
-	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
 		return false, "tls:" + err.Error()
 	}
-	// Handshake errors that are SSL alerts count as up, matching Python checker
 	return true, "tls-alert:" + err.Error()
 }
 
-func probeSOCKS5(t ProbeTarget, timeout time.Duration) (bool, string) {
+func probeSOCKS5(t ProbeTarget, timeout time.Duration) (ok bool, detail string) {
 	c, err := net.DialTimeout("tcp", net.JoinHostPort(t.Server, fmt.Sprint(t.Port)), timeout)
 	if err != nil {
 		return false, "tcp:" + err.Error()
 	}
-	defer c.Close()
-	_ = c.SetDeadline(time.Now().Add(timeout))
+	defer func() { ok, detail = closeResult(c, ok, detail) }()
+	if err := c.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return false, "deadline:" + err.Error()
+	}
 	if _, err := c.Write([]byte{0x05, 0x01, 0x02}); err != nil {
 		return false, "socks:" + err.Error()
 	}
@@ -120,15 +138,21 @@ func probeSOCKS5(t ProbeTarget, timeout time.Duration) (bool, string) {
 	}
 	switch hdr[3] {
 	case 1:
-		_, _ = io.ReadFull(c, make([]byte, 6))
+		if _, err := io.ReadFull(c, make([]byte, 6)); err != nil {
+			return false, "socks:" + err.Error()
+		}
 	case 3:
 		ln := make([]byte, 1)
 		if _, err := io.ReadFull(c, ln); err != nil {
 			return false, "socks:" + err.Error()
 		}
-		_, _ = io.ReadFull(c, make([]byte, int(ln[0])+2))
+		if _, err := io.ReadFull(c, make([]byte, int(ln[0])+2)); err != nil {
+			return false, "socks:" + err.Error()
+		}
 	case 4:
-		_, _ = io.ReadFull(c, make([]byte, 18))
+		if _, err := io.ReadFull(c, make([]byte, 18)); err != nil {
+			return false, "socks:" + err.Error()
+		}
 	}
 	return true, "socks5-telegram"
 }

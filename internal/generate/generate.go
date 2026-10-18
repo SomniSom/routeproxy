@@ -292,7 +292,9 @@ func Write(cfg *config.Config) (*Result, error) {
 		return nil, err
 	}
 	for _, w := range res.Warnings {
-		fmt.Fprintln(os.Stderr, "warn:", w)
+		if _, err := fmt.Fprintln(os.Stderr, "warn:", w); err != nil {
+			return nil, err
+		}
 	}
 	return res, nil
 }
@@ -315,7 +317,9 @@ func WriteSFA(cfg *config.Config, path string) (*Result, error) {
 		return nil, err
 	}
 	for _, w := range res.Warnings {
-		fmt.Fprintln(os.Stderr, "warn:", w)
+		if _, err := fmt.Fprintln(os.Stderr, "warn:", w); err != nil {
+			return nil, err
+		}
 	}
 	return res, nil
 }

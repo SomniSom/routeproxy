@@ -3,6 +3,7 @@ package mtproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -393,29 +394,41 @@ func (s StatusServer) writeHealth(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": anyUp})
+	if err := json.NewEncoder(w).Encode(map[string]any{"ok": anyUp}); err != nil {
+		log.Printf("healthz encode: %v", err)
+	}
 }
 
 func (s StatusServer) writeMetrics(w http.ResponseWriter, _ *http.Request) {
-	writeMetrics(w, s.Reg)
+	if err := writeMetrics(w, s.Reg); err != nil {
+		log.Printf("metrics: %v", err)
+	}
 }
 
 func (s StatusServer) writeSnapshot(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(s.Reg.Snapshot())
+	if err := enc.Encode(s.Reg.Snapshot()); err != nil {
+		log.Printf("status encode: %v", err)
+	}
 }
 
-func writeMetrics(w http.ResponseWriter, r *Registry) {
+func writeMetrics(w http.ResponseWriter, r *Registry) error {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	anyUp := 0
 	if r.AnyUp() {
 		anyUp = 1
 	}
-	fmt.Fprintf(w, "routeproxy_checker_any_up %d\n", anyUp)
-	fmt.Fprintf(w, "routeproxy_mtproto_groups %d\n", r.MTProtoGroups())
-	fmt.Fprintf(w, "routeproxy_mtproto_healthy_groups %d\n", r.MTProtoHealthy())
+	if _, err := fmt.Fprintf(w, "routeproxy_checker_any_up %d\n", anyUp); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "routeproxy_mtproto_groups %d\n", r.MTProtoGroups()); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "routeproxy_mtproto_healthy_groups %d\n", r.MTProtoHealthy()); err != nil {
+		return err
+	}
 	for _, p := range r.Proxies {
 		p.mu.Lock()
 		ok := 0
@@ -424,10 +437,17 @@ func writeMetrics(w http.ResponseWriter, r *Registry) {
 		}
 		fails := p.Fails
 		p.mu.Unlock()
-		fmt.Fprintf(w, "routeproxy_proxy_up{name=%q} %d\n", p.Name, ok)
-		fmt.Fprintf(w, "routeproxy_proxy_fails{name=%q} %d\n", p.Name, fails)
-		fmt.Fprintf(w, "routeproxy_proxy_active_conns{name=%q} %d\n", p.Name, p.ActiveConns.Load())
+		if _, err := fmt.Fprintf(w, "routeproxy_proxy_up{name=%q} %d\n", p.Name, ok); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "routeproxy_proxy_fails{name=%q} %d\n", p.Name, fails); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "routeproxy_proxy_active_conns{name=%q} %d\n", p.Name, p.ActiveConns.Load()); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func ServeGroup(ctx context.Context, g *Group, r *Registry, timeout time.Duration) error {
@@ -435,7 +455,11 @@ func ServeGroup(ctx context.Context, g *Group, r *Registry, timeout time.Duratio
 	if err != nil {
 		return err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = ln.Close() })
+	stop := context.AfterFunc(ctx, func() {
+		if err := ln.Close(); err != nil {
+			log.Printf("listen close %s:%d: %v", g.ListenHost, g.ListenPort, err)
+		}
+	})
 	defer stop()
 	log.Printf("listen %s:%d kind=%s proxies=%d", g.ListenHost, g.ListenPort, g.Kind, len(g.Proxies))
 	for {
@@ -451,7 +475,11 @@ func ServeGroup(ctx context.Context, g *Group, r *Registry, timeout time.Duratio
 }
 
 func handleClient(c net.Conn, g *Group, r *Registry, timeout time.Duration) {
-	defer c.Close()
+	defer func() {
+		if err := c.Close(); err != nil {
+			log.Printf("client close %s: %v", c.RemoteAddr(), err)
+		}
+	}()
 	backend := r.Pick(g)
 	if backend == nil {
 		log.Printf("reject %s :%d: no healthy proxy", c.RemoteAddr(), g.ListenPort)
@@ -466,11 +494,25 @@ func handleClient(c net.Conn, g *Group, r *Registry, timeout time.Duration) {
 		r.Recompute()
 		return
 	}
-	defer bc.Close()
+	defer func() {
+		if err := bc.Close(); err != nil {
+			log.Printf("backend close %s: %v", backend.Name, err)
+		}
+	}()
 	backend.ActiveConns.Add(1)
 	defer backend.ActiveConns.Add(-1)
 	errc := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(bc, c); errc <- struct{}{} }()
-	go func() { _, _ = io.Copy(c, bc); errc <- struct{}{} }()
+	go func() {
+		if _, err := io.Copy(bc, c); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+			log.Printf("copy to %s: %v", backend.Name, err)
+		}
+		errc <- struct{}{}
+	}()
+	go func() {
+		if _, err := io.Copy(c, bc); err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.EOF) {
+			log.Printf("copy from %s: %v", backend.Name, err)
+		}
+		errc <- struct{}{}
+	}()
 	<-errc
 }

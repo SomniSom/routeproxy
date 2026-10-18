@@ -102,7 +102,7 @@ Copy [`config.example.yaml`](config.example.yaml) → `config.yaml` (gitignored)
 
 ## Build
 
-Go 1.27+ and [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ on `PATH` (for `check` / `apply`).
+Go 1.27.2+ and [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ on `PATH` (for `check` / `apply`).
 
 ```bash
 go test ./...
@@ -114,6 +114,8 @@ cp config.example.yaml config.yaml
 ```
 
 Makefile: `make test`, `make build`, `make cover`, `make completion`, `make check`.
+
+`make check` is the full [verify-after-changes](.cursor/rules/verify-after-changes.mdc) gate: `gofmt -s`, `go fix`, `go vet`, `go test ./...`, build, `golangci-lint`, `govulncheck`, then generate and `sing-box check` when the binary is present.
 
 ## rpctl commands
 
@@ -259,6 +261,7 @@ Cloud Telegram (`api.telegram.org` via SOCKS `listen`, `via: auto`) **and** SMTP
 ## Tests
 
 ```bash
+make check
 go test ./...
 make cover
 ```

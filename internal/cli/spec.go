@@ -1,5 +1,7 @@
 package cli
 
+import "strings"
+
 // Command is the source of truth for usage() and shell completion.
 type Command struct {
 	Name        string
@@ -67,17 +69,19 @@ func CommandNames() []string {
 }
 
 func Usage() string {
-	b := "rpctl — routeproxy control\n\n"
+	var b strings.Builder
+	b.WriteString("rpctl — routeproxy control\n\n")
 	for _, c := range Commands() {
-		line := "  rpctl " + c.Name
+		var line strings.Builder
+		line.WriteString("  rpctl " + c.Name)
 		for _, a := range c.Args {
-			line += " <" + a + ">"
+			line.WriteString(" <" + a + ">")
 		}
-		b += padCmd(line, c.Summary) + "\n"
+		b.WriteString(padCmd(line.String(), c.Summary) + "\n")
 	}
-	b += "\nFlags (after command): -config PATH  (or $ROUTEPROXY_CONFIG)\n"
-	b += "Completion: eval \"$(rpctl completion bash)\"  or  eval \"$(rpctl completion zsh)\"\n"
-	return b
+	b.WriteString("\nFlags (after command): -config PATH  (or $ROUTEPROXY_CONFIG)\n")
+	b.WriteString("Completion: eval \"$(rpctl completion bash)\"  or  eval \"$(rpctl completion zsh)\"\n")
+	return b.String()
 }
 
 func padCmd(left, summary string) string {
@@ -88,9 +92,5 @@ func padCmd(left, summary string) string {
 }
 
 func spaces(n int) string {
-	s := make([]byte, n)
-	for i := range s {
-		s[i] = ' '
-	}
-	return string(s)
+	return strings.Repeat(" ", n)
 }

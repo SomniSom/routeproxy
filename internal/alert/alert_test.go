@@ -210,12 +210,19 @@ func withShortIOTimeout(t *testing.T) {
 	t.Cleanup(func() { alertIOTimeout = old })
 }
 
+func mustClose(t *testing.T, c io.Closer) {
+	t.Helper()
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNetDialSOCKSTimeout(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer mustClose(t, ln)
 	withShortIOTimeout(t)
 	s := New(&config.Config{Listen: ln.Addr().String()})
 	start := time.Now()
@@ -233,7 +240,11 @@ func TestSMTP465HandshakeTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	t.Cleanup(func() {
+		if err := ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Error(err)
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -241,8 +252,10 @@ func TestSMTP465HandshakeTimeout(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer c.Close()
 		time.Sleep(2 * time.Second)
+		if err := c.Close(); err != nil {
+			t.Error(err)
+		}
 	}()
 	host, portStr, err := net.SplitHostPort(ln.Addr().String())
 	if err != nil {
@@ -272,6 +285,8 @@ func TestSMTP465HandshakeTimeout(t *testing.T) {
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("TLS handshake hung %s", d)
 	}
-	ln.Close()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
 	<-done
 }
