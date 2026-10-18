@@ -69,18 +69,22 @@ func TestStatusServerHealthAndMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("healthz %d", resp.StatusCode)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
 	}
 
 	resp, err = http.Get(srv.URL + "/metrics")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
 		t.Fatal(err)
 	}
 	m := string(raw)
@@ -92,9 +96,11 @@ func TestStatusServerHealthAndMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
 	var snap map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if snap["any_up"] != true {

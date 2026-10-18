@@ -108,7 +108,7 @@ func (s *Sender) sendTelegram(text string) error {
 	return s.sendTelegramVia(text, next)
 }
 
-func (s *Sender) sendTelegramVia(text, via string) error {
+func (s *Sender) sendTelegramVia(text, via string) (err error) {
 	tok := s.cfg.Alerts.Telegram.BotToken
 	chat := s.cfg.Alerts.Telegram.ChatID
 	if tok == "" || chat == 0 {
@@ -118,18 +118,24 @@ func (s *Sender) sendTelegramVia(text, via string) error {
 	if err != nil {
 		return err
 	}
-	payload, _ := json.Marshal(map[string]any{
+	payload, err := json.Marshal(map[string]any{
 		"chat_id": chat,
 		"text":    text,
 	})
+	if err != nil {
+		return err
+	}
 	u := fmt.Sprintf("%s/bot%s/sendMessage", telegramAPI, tok)
 	resp, err := client.Post(u, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { err = errors.Join(err, resp.Body.Close()) }()
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		b, readErr := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if readErr != nil {
+			return errors.Join(httpStatusError{status: resp.StatusCode, body: string(b)}, readErr)
+		}
 		return httpStatusError{status: resp.StatusCode, body: string(b)}
 	}
 	return nil
@@ -167,14 +173,12 @@ func (s *Sender) sendSMTP(subject, body string) error {
 		return err
 	}
 	if err := conn.SetDeadline(time.Now().Add(alertIOTimeout)); err != nil {
-		conn.Close()
-		return err
+		return errors.Join(err, conn.Close())
 	}
 	if port == 465 {
 		tlsConn := tls.Client(conn, &tls.Config{ServerName: a.Host})
 		if err := tlsConn.Handshake(); err != nil {
-			tlsConn.Close()
-			return err
+			return errors.Join(err, tlsConn.Close())
 		}
 		conn = tlsConn
 	}
@@ -195,28 +199,31 @@ func (s *Sender) netDial(via, network, addr string) (net.Conn, error) {
 	return net.DialTimeout(network, addr, alertIOTimeout)
 }
 
-func smtpOver(conn net.Conn, host string, auth smtp.Auth, from string, to []string, msg []byte, startTLS bool) error {
-	defer conn.Close()
+func smtpOver(conn net.Conn, host string, auth smtp.Auth, from string, to []string, msg []byte, startTLS bool) (err error) {
 	c, err := smtp.NewClient(conn, host)
 	if err != nil {
-		return err
+		return errors.Join(err, conn.Close())
 	}
-	defer c.Close()
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, c.Close())
+		}
+	}()
 	if startTLS {
 		if ok, _ := c.Extension("STARTTLS"); ok {
-			if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			if err = c.StartTLS(&tls.Config{ServerName: host}); err != nil {
 				return err
 			}
 		}
 	}
-	if err := c.Auth(auth); err != nil {
+	if err = c.Auth(auth); err != nil {
 		return err
 	}
-	if err := c.Mail(from); err != nil {
+	if err = c.Mail(from); err != nil {
 		return err
 	}
 	for _, rcpt := range to {
-		if err := c.Rcpt(rcpt); err != nil {
+		if err = c.Rcpt(rcpt); err != nil {
 			return err
 		}
 	}
@@ -224,10 +231,10 @@ func smtpOver(conn net.Conn, host string, auth smtp.Auth, from string, to []stri
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write(msg); err != nil {
+	if _, err = w.Write(msg); err != nil {
 		return err
 	}
-	if err := w.Close(); err != nil {
+	if err = w.Close(); err != nil {
 		return err
 	}
 	return c.Quit()

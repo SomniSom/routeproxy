@@ -31,8 +31,8 @@ func WireGuardWarnings(cfg *config.Config) []string {
 		}
 	} else if f, err := os.OpenFile(tunDevice, os.O_RDWR, 0); err != nil {
 		out = append(out, fmt.Sprintf("не открыть /dev/net/tun (%v). В Docker сервису routeproxy: devices: [/dev/net/tun:/dev/net/tun] и cap_add: [NET_ADMIN]. Чекеру это не нужно; --privileged не требуется.", err))
-	} else {
-		_ = f.Close()
+	} else if err := f.Close(); err != nil {
+		out = append(out, fmt.Sprintf("не закрыть /dev/net/tun (%v).", err))
 	}
 	if ok, err := hasCapNetAdmin(); err == nil && !ok {
 		out = append(out, "нет CAP_NET_ADMIN. В Docker сервису routeproxy: cap_add: [NET_ADMIN]. Чекеру (rpctl checker) это не нужно; --privileged не требуется.")

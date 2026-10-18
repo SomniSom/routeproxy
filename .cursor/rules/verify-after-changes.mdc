@@ -1,0 +1,17 @@
+---
+description: After any Go code change, required checks must pass before finishing
+alwaysApply: true
+---
+
+# Checks after changes
+
+A code change is complete only after the checks below have passed. The size of the edit does not waive them.
+
+- Format: `gofmt -s` (or the project equivalent, e.g. `gofumpt`).
+- API modernization: `go fix ./...` (with the project's build tags if they are required to compile).
+- Build affected packages with the same tags/CGO as a normal build.
+- Tests: `go test` for every affected package; if several packages or a public API changed, `go test ./...`.
+- Static analysis: `go vet` and, if the repo has a config, `golangci-lint run`.
+- Dependencies: if `go.mod` / `go.sum` changed, `govulncheck` (or the project's CVE scanner).
+- If the repo has an aggregate target (`make check`, a CI script), run that; do not skip the items above unless that target already covers them.
+- On any failure: fix it, then re-run. Do not finish with failing tests, lint, or leftover `go fix` work.

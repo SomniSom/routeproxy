@@ -65,9 +65,6 @@ func parseTelegramQuery(raw string, kind Kind) (*Parsed, error) {
 		return nil, err
 	}
 	q := u.Query()
-	if u.Host == "socks" || u.Host == "proxy" {
-		// tg://socks?server= already in RawQuery
-	}
 	server := first(q, "server", "address")
 	portStr := first(q, "port")
 	if server == "" {

@@ -59,18 +59,29 @@ func main() {
 	case "help", "-h", "--help":
 		usage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
+		if err := writeStderr("unknown command %q\n", cmd); err != nil {
+			os.Exit(3)
+		}
 		usage()
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", cmd, err)
+		if werr := writeStderr("%s: %v\n", cmd, err); werr != nil {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 }
 
+func writeStderr(format string, args ...any) error {
+	_, err := fmt.Fprintf(os.Stderr, format, args...)
+	return err
+}
+
 func usage() {
-	fmt.Fprint(os.Stderr, cli.Usage())
+	if _, err := fmt.Fprint(os.Stderr, cli.Usage()); err != nil {
+		os.Exit(3)
+	}
 }
 
 func cmdCompletion(args []string) error {
@@ -112,7 +123,9 @@ func cmdGenerate(args []string) error {
 	fmt.Printf("wrote %s (%d bytes) auto=%s ru=%s telegram=%s\n",
 		cfg.GeneratedPath, len(res.JSON), res.AutoTag, res.RUTag, res.TGTag)
 	if len(res.Warnings) > 0 {
-		fmt.Fprintf(os.Stderr, "warn: WireGuard in config (%d check(s))\n", len(res.Warnings))
+		if err := writeStderr("warn: WireGuard in config (%d check(s))\n", len(res.Warnings)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -131,7 +144,9 @@ func cmdGenerateSFA(args []string) error {
 			return err
 		}
 		for _, w := range res.Warnings {
-			fmt.Fprintln(os.Stderr, "warn:", w)
+			if _, err := fmt.Fprintln(os.Stderr, "warn:", w); err != nil {
+				return err
+			}
 		}
 		_, err = os.Stdout.Write(res.JSON)
 		return err
@@ -142,7 +157,9 @@ func cmdGenerateSFA(args []string) error {
 	}
 	fmt.Printf("wrote %s (%d bytes) auto=%s ru=%s telegram=%s\n",
 		out, len(res.JSON), res.AutoTag, res.RUTag, res.TGTag)
-	fmt.Fprintln(os.Stderr, "import in SFA: Profiles → + → Import from file")
+	if _, err := fmt.Fprintln(os.Stderr, "import in SFA: Profiles → + → Import from file"); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -326,8 +343,14 @@ func cmdProbe(args []string) error {
 	if err != nil {
 		return fmt.Errorf("checker %s: %w", u, err)
 	}
-	b, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if err != nil {
+		return errors.Join(fmt.Errorf("checker %s: %w", u, err), closeErr)
+	}
+	if closeErr != nil {
+		return closeErr
+	}
 	fmt.Printf("checker %s → %d %s\n", u, resp.StatusCode, strings.TrimSpace(string(b)))
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("checker unhealthy")
@@ -389,7 +412,9 @@ func cmdChecker(args []string) error {
 	for {
 		select {
 		case <-ctx.Done():
-			_ = srv.Close()
+			if err := srv.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
 			return nil
 		case <-tick.C:
 			reg.CheckAll(cfg)

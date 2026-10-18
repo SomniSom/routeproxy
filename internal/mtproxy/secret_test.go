@@ -1,9 +1,10 @@
 package mtproxy_test
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -11,11 +12,29 @@ import (
 	"routeproxy/internal/mtproxy"
 )
 
+func listenPort(t *testing.T, ln net.Listener) int {
+	t.Helper()
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func closeChecked(t *testing.T, c io.Closer) {
+	t.Helper()
+	if err := c.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Fatal(err)
+	}
+}
+
 func TestSecretEE(t *testing.T) {
-	// telegram.org in hex after 32-byte key
-	sec := "ee" + "00" + "000000000000000000000000000000" + "74656c656772616d2e6f7267"
-	// simpler: ee + 32 hex chars of zeros is 2+32=34, rest is domain
-	sec = "ee" + "00000000000000000000000000000000" + "74656c656772616d2e6f7267"
+	// ee + 32 hex zeros (2+32=34), rest is telegram.org
+	sec := "ee" + "00000000000000000000000000000000" + "74656c656772616d2e6f7267"
 	m := mtproxy.SecretMetaFrom(sec)
 	if m.Kind != mtproxy.SecretEE {
 		t.Fatalf("kind %s", m.Kind)
@@ -37,17 +56,16 @@ func TestProbeTCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer closeChecked(t, ln)
 	go func() {
 		c, err := ln.Accept()
 		if err == nil {
-			c.Close()
+			if err := c.Close(); err != nil {
+				t.Error(err)
+			}
 		}
 	}()
-	_, port, _ := net.SplitHostPort(ln.Addr().String())
-	var p int
-	fmt.Sscanf(port, "%d", &p)
-	ok, detail := mtproxy.Probe(mtproxy.ProbeTarget{Kind: "mtproto", Server: "127.0.0.1", Port: p, Secret: "aabbcc"}, time.Second)
+	ok, detail := mtproxy.Probe(mtproxy.ProbeTarget{Kind: "mtproto", Server: "127.0.0.1", Port: listenPort(t, ln), Secret: "aabbcc"}, time.Second)
 	if !ok {
 		t.Fatal(detail)
 	}
@@ -58,22 +76,24 @@ func TestProbeFakeTLSAlertIsAlive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer closeChecked(t, ln)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		defer c.Close()
+		defer closeChecked(t, c)
 		buf := make([]byte, 64)
-		_, _ = c.Read(buf)
-		_, _ = c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28}) // TLS alert
+		if _, err := c.Read(buf); err != nil && !errors.Is(err, io.EOF) {
+			t.Error(err)
+			return
+		}
+		if _, err := c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x28}); err != nil {
+			t.Error(err)
+		}
 	}()
-	_, port, _ := net.SplitHostPort(ln.Addr().String())
-	var p int
-	fmt.Sscanf(port, "%d", &p)
 	sec := "ee" + "00000000000000000000000000000000" + "74656c656772616d2e6f7267"
-	ok, detail := mtproxy.Probe(mtproxy.ProbeTarget{Kind: "mtproto", Server: "127.0.0.1", Port: p, Secret: sec}, 2*time.Second)
+	ok, detail := mtproxy.Probe(mtproxy.ProbeTarget{Kind: "mtproto", Server: "127.0.0.1", Port: listenPort(t, ln), Secret: sec}, 2*time.Second)
 	if !ok {
 		t.Fatal(detail)
 	}
@@ -84,13 +104,10 @@ func TestProbeSOCKS5(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer closeChecked(t, ln)
 	go serveMockSOCKS(t, ln)
-	_, port, _ := net.SplitHostPort(ln.Addr().String())
-	var p int
-	fmt.Sscanf(port, "%d", &p)
 	ok, detail := mtproxy.Probe(mtproxy.ProbeTarget{
-		Kind: "socks5", Server: "127.0.0.1", Port: p, Username: "u", Password: "p",
+		Kind: "socks5", Server: "127.0.0.1", Port: listenPort(t, ln), Username: "u", Password: "p",
 	}, 2*time.Second)
 	if !ok {
 		t.Fatal(detail)
@@ -103,35 +120,57 @@ func serveMockSOCKS(t *testing.T, ln net.Listener) {
 	if err != nil {
 		return
 	}
-	defer c.Close()
+	defer closeChecked(t, c)
 	buf := make([]byte, 3)
 	if _, err := io.ReadFull(c, buf); err != nil {
+		t.Error(err)
 		return
 	}
-	_, _ = c.Write([]byte{5, 2})
+	if _, err := c.Write([]byte{5, 2}); err != nil {
+		t.Error(err)
+		return
+	}
 	auth := make([]byte, 2)
 	if _, err := io.ReadFull(c, auth); err != nil {
+		t.Error(err)
 		return
 	}
 	u := make([]byte, int(auth[1]))
 	if _, err := io.ReadFull(c, u); err != nil {
+		t.Error(err)
 		return
 	}
 	plen := make([]byte, 1)
 	if _, err := io.ReadFull(c, plen); err != nil {
+		t.Error(err)
 		return
 	}
 	pw := make([]byte, int(plen[0]))
 	if _, err := io.ReadFull(c, pw); err != nil {
+		t.Error(err)
 		return
 	}
-	_, _ = c.Write([]byte{1, 0})
+	if _, err := c.Write([]byte{1, 0}); err != nil {
+		t.Error(err)
+		return
+	}
 	req := make([]byte, 4)
-	_, _ = io.ReadFull(c, req)
+	if _, err := io.ReadFull(c, req); err != nil {
+		t.Error(err)
+		return
+	}
 	dlen := make([]byte, 1)
-	_, _ = io.ReadFull(c, dlen)
-	_, _ = io.ReadFull(c, make([]byte, int(dlen[0])+2))
-	_, _ = c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+	if _, err := io.ReadFull(c, dlen); err != nil {
+		t.Error(err)
+		return
+	}
+	if _, err := io.ReadFull(c, make([]byte, int(dlen[0])+2)); err != nil {
+		t.Error(err)
+		return
+	}
+	if _, err := c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}); err != nil {
+		t.Error(err)
+	}
 }
 
 func TestRegistryFailover(t *testing.T) {

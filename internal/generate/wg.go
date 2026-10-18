@@ -2,6 +2,7 @@ package generate
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -17,13 +18,13 @@ type WGQuick struct {
 	Endpoint     string
 }
 
-func ParseWGQuick(path string) (*WGQuick, error) {
+func ParseWGQuick(path string) (out *WGQuick, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	out := &WGQuick{}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	out = &WGQuick{}
 	section := ""
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -54,7 +55,11 @@ func ParseWGQuick(path string) (*WGQuick, error) {
 					}
 				}
 			case "MTU":
-				out.MTU, _ = strconv.Atoi(v)
+				mtu, convErr := strconv.Atoi(v)
+				if convErr != nil {
+					return nil, convErr
+				}
+				out.MTU = mtu
 			}
 		case "peer":
 			switch k {

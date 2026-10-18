@@ -100,7 +100,7 @@ routing:
 
 ## Сборка
 
-Нужны Go 1.27+ и [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ в `PATH` (для `check` / `apply`).
+Нужны Go 1.27.2+ и [sing-box](https://github.com/SagerNet/sing-box/releases) 1.12+ в `PATH` (для `check` / `apply`).
 
 ```bash
 go test ./...
@@ -112,6 +112,8 @@ cp config.example.yaml config.yaml
 ```
 
 Makefile: `make test`, `make build`, `make cover`, `make completion`, `make check`.
+
+`make check` — полный набор из [verify-after-changes](.cursor/rules/verify-after-changes.mdc): `gofmt -s`, `go fix`, `go vet`, `go test ./...`, сборка, `golangci-lint`, `govulncheck`, затем generate и (если есть) `sing-box check`.
 
 ## Команды rpctl
 
@@ -257,6 +259,7 @@ Telegram (`api.telegram.org` через SOCKS `listen`, `via: auto`) **и** SMTP
 ## Тесты
 
 ```bash
+make check
 go test ./...
 make cover
 ```
